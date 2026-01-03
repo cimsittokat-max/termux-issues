@@ -1,0 +1,163 @@
+# ================== ARDUINO ==================
+board = Arduino('COM3')   # Linux: /dev/ttyUSB0
+time.sleep(2)
+
+HEAD = 9
+ARM  = 10
+board.digital[HEAD].mode = SERVO
+board.digital[ARM].mode  = SERVO
+
+head_angle = 90
+arm_angle  = 90
+
+def move_head(a):
+    board.digital[HEAD].write(a)
+
+def move_arm(a):
+    board.digital[ARM].write(a)
+
+# ================== SES ==================
+def speak(text):
+    os.system(f'espeak "{text}"')
+
+# ================== SES TANIMA ==================
+r = sr.Recognizer()
+
+def voice_loop():
+    global arm_angle
+    while True:
+        try:
+            with sr.Microphone() as source:
+                audio = r.listen(source, timeout=5)
+            text = r.recognize_google(audio, language="tr-TR").lower()
+            print("Ses:", text)
+
+            if "merhaba" in text:
+                speak("Merhaba insan")
+
+            if "kolu kaldır" in text:
+                arm_angle = min(180, arm_angle + 20)
+                move_arm(arm_angle)
+
+            if "kolu indir" in text:
+                arm_angle = max(0, arm_angle - 20)
+                move_arm(arm_angle)
+
+        except:
+            pass
+
+# ================== KAMERA + YÜZ ==================
+cam = cv2.VideoCapture(0)
+face = cv2.CascadeClassifier(
+    cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+)
+
+def gen_frames():
+    global head_angle
+    while True:
+        ret, frame = cam.read()
+        if not ret:
+            break
+
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        faces = face.detectMultiScale(gray, 1.3, 5)
+
+        for (x,y,w,h) in faces:
+            cx = x + w//2
+            if cx < 200:
+                head_angle = min(180, head_angle + 2)
+            elif cx > 440:
+                head_angle = max(0, head_angle - 2)
+            move_head(head_angle)
+
+            cv2.rectangle(frame,(x,y),(x+w,y+h),(0,255,0),2)
+
+        _, buffer = cv2.imencode('.jpg', frame)
+        frame = buffer.tobytes()
+
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+
+# ================== WEB ==================
+app = Flask(__name__)
+
+HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Humanoid Robot</title>
+<style>
+body{background:#020617;color:white;font-family:Arial;text-align:center}
+button{width:90%;padding:18px;margin:8px;font-size:18px;
+border:none;border-radius:14px;background:#38bdf8;color:black}
+img{width:95%;border-radius:12px;margin-top:10px}
+</style>
+</head>
+<body>
+<h2>🤖 Humanoid Ana Kontrol Paneli</h2>
+
+<img src="/video">
+
+<button onclick="send('HEAD_L')">⬅️ Kafa Sol</button>
+<button onclick="send('HEAD_R')">➡️ Kafa Sağ</button>
+<button onclick="send('ARM_UP')">🦾 Kol Kaldır</button>
+<button onclick="send('ARM_DOWN')">🦾 Kol İndir</button>
+<button onclick="send('HELLO')">🗣 Merhaba</button>
+
+<script>
+function send(c){
+fetch('/cmd',{method:'POST',
+headers:{'Content-Type':'application/x-www-form-urlencoded'},
+body:'cmd='+c});
+}
+</script>
+</body>
+</html>
+"""
+
+@app.route('/')
+def index():
+    return render_template_string(HTML)
+
+@app.route('/video')
+def video():
+    return Response(gen_frames(),
+        mimetype='multipart/x-mixed-replace; boundary=frame')
+
+@app.route('/cmd', methods=['POST'])
+def cmd():
+    global head_angle, arm_angle
+    c = request.form['cmd']
+
+    if c == "HEAD_L":
+        head_angle = max(0, head_angle - 10)
+        move_head(head_angle)
+
+    if c == "HEAD_R":
+        head_angle = min(180, head_angle + 10)
+        move_head(head_angle)
+
+    if c == "ARM_UP":
+        arm_angle = min(180, arm_angle + 15)
+        move_arm(arm_angle)
+
+    if c == "ARM_DOWN":
+        arm_angle = max(0, arm_angle - 15)
+        move_arm(arm_angle)
+
+    if c == "HELLO":
+        speak("Merhaba ben insansı robotum")
+
+    return ('',204)
+
+# ================== BAŞLAT ==================
+if __name__ == '__main__':
+    speak("Humanoid sistem başlatıldı")
+
+    threading.Thread(target=voice_loop, daemon=True).start()
+
+    app.run(host='0.0.0.0', port=5000)# termux-issues
+Issues for the Google Play build of Termux.
+
+If you have installed Termux from Google Play, please report issues [here](https://github.com/termux-play-store/termux-issues/issues/new/choose) and nowhere else.
